@@ -19,7 +19,7 @@ log_path = f"../Experimentations/logs/logs_{heure_fichier}.csv"
 #Header du logfile
 with open(log_path, mode='w', newline='') as f:
     writer = csv.writer(f)
-    writer.writerow(['epoch', 'train_loss', 'learning_rate', 'train_acc', 'test_acc', 'Training_time', 'Model', 'Nb_parameters']) # En-têtes
+    writer.writerow(['epoch', 'train_loss', 'learning_rate', 'train_acc', 'test_acc', 'training_time', 'testing_time']) # En-têtes
 
 #Instanciation des listes de données 
 list_losses = []
@@ -58,27 +58,31 @@ testloader = DataLoader(c10test,batch_size=32)
 print('==> Building model..')
 # net = ResNet18()
 # net = DenseNet121()
-# net = PreActResNet18()
-net = VGG('VGG16')
+net = PreActResNet18()
+# net = VGG('VGG16')
 net = net.to(device)
 
 #Définition des paramètres
 criterion = torch.nn.CrossEntropyLoss() #définition de la fonction de perte
 #définition de l'optimiseur (modifie les poids du réseau en fonction de la loss)
-optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
+optimizer = torch.optim.SGD(net.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
 n_epochs = 30  #nombre d'époques
 
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 start_epoch = 0 #époque de départ
 best_acc = 0 #Définition de la meilleure accuracy
 
-heurepretraining = datetime.now()
+def gethour():
+    return datetime.now()
+
+heurepretraining = gethour()
 
 
 print("Début de l'entraînement...")
 
 def train(epoch):
     print('\nEpoch: %d' % epoch)
+    start_time = gethour()
     net.train()
     train_loss = 0
     correct = 0
@@ -102,12 +106,14 @@ def train(epoch):
         progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                      % (avg_loss, train_acc, correct, total))
         
+    duration = gethour() - start_time
     current_lr = optimizer.param_groups[0]['lr']
-    return avg_loss, train_acc, current_lr
+    return avg_loss, train_acc, current_lr, duration
 
 
 def test(epoch):
     global best_acc
+    start_time = gethour()
     net.eval()
     test_loss = 0
     correct = 0
@@ -126,43 +132,40 @@ def test(epoch):
 
             progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                          % (test_loss/(batch_idx+1), test_acc , correct, total))
-            
-        return test_acc
-
-    # Save checkpoint.
-    acc = 100.*correct/total
-    if acc > best_acc:
-        print('Saving..')
-        state = {
-            'net': net.state_dict(),
-            'acc': acc,
-            'epoch': epoch,
-        }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/ckpt.pth')
-        best_acc = acc
-
-
-
+        
+        # Save checkpoint.
+        acc = 100.*correct/total
+        if acc > best_acc:
+            print('Saving..')
+            state = {
+                'net': net.state_dict(),
+                'acc': acc,
+                'epoch': epoch,
+            }
+            if not os.path.isdir('checkpoint'):
+                os.mkdir('checkpoint')
+            torch.save(state, './checkpoint/ckpt.pth')
+            best_acc = acc
+        
+        duration = gethour() - start_time 
+        return test_acc, duration
 
 
+
+
+#Boucle principale
 for epoch in range(start_epoch, n_epochs):
-    tr_loss, tr_acc, lr_rate = train(epoch)
-    te_acc = test(epoch)
+    tr_loss, tr_acc, lr_rate, hrtrainepoch = train(epoch)
+    te_acc, hrtestepoch = test(epoch)
     scheduler.step()
+
     with open(log_path, mode = 'a', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow([epoch+1, f"{tr_loss:.3f}", lr_rate, f"{tr_acc:.2f}", f"{te_acc:.2f}"])
+        writer.writerow([epoch+1, f"{tr_loss:.3f}", lr_rate, f"{tr_acc:.2f}", f"{te_acc:.2f}", hrtrainepoch, hrtestepoch])
 
 
 print('Entraînement terminé.')
 
-
-
-with open(log_path, mode = 'a', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow([epoch+1, f"{tr_loss:.3f}", lr_rate, f"{tr_acc:.2f}", f"{te_acc:.2f}"])
 
 
 #Définition du temps d'entrainement, du nom du modèle utilisé et du nombre de paramètres
