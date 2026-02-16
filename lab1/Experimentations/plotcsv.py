@@ -4,18 +4,36 @@ import glob
 import os
 import shutil
 
-# 1. Récupération du fichier le plus récent
-list_of_files = glob.glob('../Experimentations/logs/*.csv')
+# --- 1. Sélection interactive du fichier de logs ---
+log_folder = '../Experimentations/logs/*.csv'
+list_of_files = glob.glob(log_folder)
+
 if not list_of_files:
     print("Aucun fichier de logs trouvé.")
     exit()
 
-latest_file = max(list_of_files, key=os.path.getctime)
-print(f"Traitement de : {latest_file}")
+# Trier les fichiers par date de création (du plus récent au plus ancien)
+list_of_files.sort(key=os.path.getctime, reverse=True)
+
+# Garder les 10 derniers
+recent_files = list_of_files[:10]
+
+print("\n--- Choisissez le fichier de logs à tracer ---")
+for i, file in enumerate(recent_files):
+    # On affiche l'index et le nom du fichier pour plus de clarté
+    print(f"[{i}] {os.path.basename(file)}")
+
+try:
+    choice = int(input(f"\nEntrez le numéro (0-{len(recent_files)-1}) [Défaut 0] : ") or 0)
+    selected_file = recent_files[choice]
+except (ValueError, IndexError):
+    print("Choix invalide, utilisation du fichier le plus récent.")
+    selected_file = recent_files[0]
+
+print(f"\nTraitement de : {selected_file}")
 
 # 2. Extraction de la date du nom du fichier pour créer le dossier
-# Si le fichier est logs_20240520_143005.csv, on récupère 20240520_143005
-filename = os.path.basename(latest_file)
+filename = os.path.basename(selected_file)
 timestamp = filename.replace("logs_", "").replace(".csv", "")
 
 # Définition et création du dossier de destination
@@ -25,7 +43,7 @@ if os.path.exists(plot_dir):
 os.makedirs(plot_dir)
 
 # 3. Chargement des données
-df = pd.read_csv(latest_file)
+df = pd.read_csv(selected_file)
 
 # --- PLOT 1 : Learning Rate ---
 plt.figure(figsize=(10, 5))

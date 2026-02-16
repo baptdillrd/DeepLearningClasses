@@ -12,15 +12,6 @@ from models.densenet import *
 from models.preact_resnet import *
 from models.vgg import *
 
-#Création du fichier de logs
-heure_fichier = datetime.now().strftime("%Y%m%d_%H%M%S")
-log_path = f"../Experimentations/logs/logs_{heure_fichier}.csv"
-
-#Header du logfile
-with open(log_path, mode='w', newline='') as f:
-    writer = csv.writer(f)
-    writer.writerow(['epoch', 'train_loss', 'learning_rate', 'train_acc', 'test_acc', 'training_time', 'testing_time']) # En-têtes
-
 #Instanciation des listes de données 
 list_losses = []
 train_accuracies = []
@@ -51,30 +42,61 @@ rootdir = '/opt/img/effdl-cifar10/'
 c10train = CIFAR10(rootdir,train=True,download=True,transform=transform_train)
 c10test = CIFAR10(rootdir,train=False,download=True,transform=transform_test)
 
-trainloader = DataLoader(c10train,batch_size=32,shuffle=True)
-testloader = DataLoader(c10test,batch_size=32)
+trainloader = DataLoader(c10train,batch_size=64,shuffle=True)
+testloader = DataLoader(c10test,batch_size=64)
 
 #Définition du modèle
 print('==> Building model..')
 # net = ResNet18()
-# net = DenseNet121()
-net = PreActResNet18()
+net = DenseNet121()
+# net = PreActResNet18()
 # net = VGG('VGG16')
 net = net.to(device)
+netname = net.__class__.__name__
 
 #Définition des paramètres
 criterion = torch.nn.CrossEntropyLoss() #définition de la fonction de perte
 #définition de l'optimiseur (modifie les poids du réseau en fonction de la loss)
-optimizer = torch.optim.SGD(net.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
-n_epochs = 30  #nombre d'époques
+optimizer = torch.optim.SGD(net.parameters(), lr=0.05, momentum=0.9, weight_decay=5e-4)
+n_epochs = 200  #nombre d'époques
 
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 start_epoch = 0 #époque de départ
 best_acc = 0 #Définition de la meilleure accuracy
 
+
+
+#Fonction de resume
+resume = False      #A changer en True si on charge un modèle existant
+
+if resume:
+    print('==> Resuming from checkpoint..')
+    ckpt_path = f'./checkpoint/ckpt_{net.__class__.__name__}.pth'
+    if os.path.isfile(ckpt_path):
+        checkpoint = torch.load(ckpt_path)
+        net.load_state_dict(checkpoint['net'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        scheduler.load_state_dict(checkpoint['scheduler'])
+        best_acc = checkpoint['acc']
+        start_epoch = checkpoint['epoch'] + 1
+        print(f"Loaded {ckpt_path} at epoch {start_epoch} (Best Acc: {best_acc:.2f}%)")
+    else:
+        print("Error: no checkpoint directory found!")
+
+
+
+
+#Création du fichier de logs
+heure_fichier = datetime.now().strftime("%Y%m%d_%H%M%S")
+log_path = f"../Experimentations/logs/logs_{heure_fichier}_{netname}.csv"
+
+#Header du logfile
+with open(log_path, mode='w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(['epoch', 'train_loss', 'learning_rate', 'train_acc', 'test_acc', 'training_time', 'testing_time']) # En-têtes
+
 def gethour():
     return datetime.now()
-
 heurepretraining = gethour()
 
 
@@ -87,6 +109,8 @@ def train(epoch):
     train_loss = 0
     correct = 0
     total = 0
+    total_batches = len(trainloader)
+
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
@@ -103,8 +127,10 @@ def train(epoch):
         avg_loss = train_loss / (batch_idx + 1)
         train_acc = 100.*correct/total
 
-        progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                     % (avg_loss, train_acc, correct, total))
+        msg = f'Loss: {avg_loss:.3f} | Acc: {train_acc:.2f}%'
+        progress_bar(batch_idx, total_batches, msg)
+        # progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+        #              % (avg_loss, train_acc, correct, total))
         
     duration = gethour() - start_time
     current_lr = optimizer.param_groups[0]['lr']
@@ -118,6 +144,9 @@ def test(epoch):
     test_loss = 0
     correct = 0
     total = 0
+    test_acc = 0
+    total_batches = len(trainloader)
+
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
@@ -130,22 +159,25 @@ def test(epoch):
             correct += predicted.eq(targets).sum().item()
             test_acc = 100.*correct/total
 
-            progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                         % (test_loss/(batch_idx+1), test_acc , correct, total))
-        
+            msg = f'Loss: {test_loss/(batch_idx+1):.3f} | Acc: {test_acc:.2f}%'
+            progress_bar(batch_idx, total_batches, msg)
+            # progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)\n'
+            #              % (test_loss/(batch_idx+1), test_acc , correct, total))
         # Save checkpoint.
-        acc = 100.*correct/total
-        if acc > best_acc:
-            print('Saving..')
+        if test_acc > best_acc:
+            print(f'Saving best model - Accuracy : {test_acc:.2f} %')
             state = {
                 'net': net.state_dict(),
-                'acc': acc,
+                'optimizer' : optimizer.state_dict(),
+                'scheduler' : scheduler.state_dict(),
+                'acc': test_acc,
                 'epoch': epoch,
+                'net_name' : net.__class__.__name__
             }
             if not os.path.isdir('checkpoint'):
                 os.mkdir('checkpoint')
-            torch.save(state, './checkpoint/ckpt.pth')
-            best_acc = acc
+            torch.save(state, f'./checkpoint/ckpt_{net.__class__.__name__}.pth')
+            best_acc = test_acc
         
         duration = gethour() - start_time 
         return test_acc, duration
@@ -171,7 +203,6 @@ print('Entraînement terminé.')
 #Définition du temps d'entrainement, du nom du modèle utilisé et du nombre de paramètres
 heureposttraining = datetime.now()
 trainingtime = heureposttraining - heurepretraining
-netname = net.__class__.__name__
 num_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
 
 #Affichage de tout ça

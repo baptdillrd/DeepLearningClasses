@@ -11,3 +11,77 @@
 *** Fichier '* Startup Log *'
 Traitement de '/etc/joe/editorrc'...Traitement de '/etc/joe/ftyperc'...Finished processing /etc/joe/ftyperc
 Finished processing /etc/joe/editorrc
+
+*** These modified files were found in JOE when it aborted on Sat Feb 14 13:23:36 2026
+*** JOE was aborted because the terminal closed
+
+*** Fichier '(Sans nom)'
+root
+
+*** Fichier '/users/local/b23douil/.git/COMMIT_EDITMSG'
+fix: fix du dépot distant
+# Veuillez saisir le message de validation pour vos modifications. Les lignes
+# commençant par '#' seront ignorées, et un message vide abandonne la validation.
+#
+# Validateur : Baptiste DOUILLARD <b23douil@sl-tp-br-508.imta.fr>
+#
+# Sur la branche main
+# Modifications qui seront validées :
+#	nouveau fichier : DEADJOE
+#	supprimé :        lab1/Experimentations/arrayscript.py
+#	supprimé :        lab1/Experimentations/logs/logs_20260211_091124.csv
+#	modifié :         lab1/Experimentations/logs/logs_20260211_094333.csv
+#	modifié :         lab1/Experimentations/logs/logs_20260211_104155.csv
+#	supprimé :        lab1/Experimentations/logs/logs_20260211_134953.csv
+#	modifié :         lab1/Experimentations/logs/logs_20260211_151736.csv
+#	nouveau fichier : lab1/Experimentations/logs/logs_20260214_120703.csv
+#	supprimé :        lab1/Experimentations/plots/20260211_091124/accuracies.png
+#	supprimé :        lab1/Experimentations/plots/20260211_091124/learning_rate.png
+#	supprimé :        lab1/Experimentations/plots/20260211_091124/train_loss.png
+#	renommé :         lab1/Experimentations/plots/20260211_094333/accuracies.png -> lab1/Experimentations/plots/ResNet_30epoch/accuracies.png
+#	renommé :         lab1/Experimentations/plots/20260211_094333/learning_rate.png -> lab1/Experimentations/plots/ResNet_30epoch/learning_rate.png
+#	renommé :         lab1/Experimentations/plots/20260211_094333/train_loss.png -> lab1/Experimentations/plots/ResNet_30epoch/train_loss.png
+#	nouveau fichier : lab1/Experimentations/plots/VGG_30epoch/accuracies.png
+#	nouveau fichier : lab1/Experimentations/plots/VGG_30epoch/learning_rate.png
+#	nouveau fichier : lab1/Experimentations/plots/VGG_30epoch/train_loss.png
+#	modifié :         lab1/part2-3/Cifar10.py
+#	nouveau fichier : lab1/part2-3/arrayscript.py
+#	supprimé :        pytorch-cifar
+#	nouveau fichier : pytorch-cifar/LICENSE
+#	nouveau fichier : pytorch-cifar/README.md
+#	nouveau fichier : pytorch-cifar/main.py
+#	nouveau fichier : pytorch-cifar/models/__init__.py
+#	nouveau fichier : pytorch-cifar/models/densenet.py
+#	nouveau fichier : pytorch-cifar/models/dla.py
+#	nouveau fichier : pytorch-cifar/models/dla_simple.py
+#	nouveau fichier : pytorch-cifar/models/dpn.py
+#	nouveau fichier : pytorch-cifar/models/efficientnet.py
+#	nouveau fichier : pytorch-cifar/models/googlenet.py
+#	nouveau fichier : pytorch-cifar/models/lenet.py
+#	nouveau fichier : pytorch-cifar/models/mobilenet.py
+#	nouveau fichier : pytorch-cifar/models/mobilenetv2.py
+#	nouveau fichier : pytorch-cifar/models/pnasnet.py
+#	nouveau fichier : pytorch-cifar/models/preact_resnet.py
+#	nouveau fichier : pytorch-cifar/models/regnet.py
+#	nouveau fichier : pytorch-cifar/models/resnet.py
+#	nouveau fichier : pytorch-cifar/models/resnext.py
+#	nouveau fichier : pytorch-cifar/models/senet.py
+#	nouveau fichier : pytorch-cifar/models/shufflenet.py
+#	nouveau fichier : pytorch-cifar/models/shufflenetv2.py
+#	nouveau fichier : pytorch-cifar/models/vgg.py
+#	nouveau fichier : pytorch-cifar/utils.py
+#
+
+*** Fichier '(Sans nom)'
+wrnw
+
+*** Fichier '(Sans nom)'
+/homes/b23douil/Documents/VHDL/.git/COMMIT_EDITMSG
+/homes/b23douil/Documents/VHDL/.git/COMMIT_EDITMSG
+/users/local/b23douil/.git/COMMIT_EDITMSG
+/users/local/b23douil/.git/COMMIT_EDITMSG
+
+*** Fichier '* Startup Log *'
+Impossible de lire l'entrée termcap. Utilisation des valeurs ansi
+Traitement de '/etc/joe/editorrc'...Traitement de '/etc/joe/ftyperc'...Finished processing /etc/joe/ftyperc
+Finished processing /etc/joe/editorrc
