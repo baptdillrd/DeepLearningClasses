@@ -1,6 +1,9 @@
 import torch
 import matplotlib.pyplot as plt
-from models import ResNet18, PreActResNet18, VGG, DenseNet121
+from models.resnet import *
+from models.densenet import *
+from models.preact_resnet import *
+from models.vgg import *
 
 # Modèles et noms
 model_classes = [ResNet18, PreActResNet18, lambda: VGG("VGG16"), DenseNet121]
@@ -17,7 +20,7 @@ for model_cls in model_classes:
 
 # Accuracies
 acc_th = [93.02, 95.11, 92.64, 95.04]
-acc_exp = [, , , ]
+acc_exp = [95.63, 95.40, 93.90, 95.95]
 
 ## manual add
 # acc.append(87.77)
