@@ -65,7 +65,7 @@ netname = net.__class__.__name__
 criterion = torch.nn.CrossEntropyLoss() #définition de la fonction de perte
 #définition de l'optimiseur (modifie les poids du réseau en fonction de la loss)
 optimizer = torch.optim.SGD(net.parameters(), lr=0.05, momentum=0.9, weight_decay=5e-4)
-n_epochs = 5  #nombre d'époques
+n_epochs = 200  #nombre d'époques
 
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 start_epoch = 0 #époque de départ

@@ -39,7 +39,7 @@ correct = 0
 total = 0
 with torch.no_grad():
     for inputs, targets in testloader:
-        inputs, targets = inputs.to(device), targets.to(device)
+        inputs, targets = inputs.to(device).half(), targets.to(device)
         outputs = net(inputs)
         _, predicted = outputs.max(1)
         total += targets.size(0)
