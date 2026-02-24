@@ -5,6 +5,7 @@ from torch.utils.data.dataloader import DataLoader
 import os
 from matplotlib import pyplot as plt
 import numpy as np
+from binaryconnect import BC
 
 import csv
 from datetime import datetime
@@ -60,6 +61,7 @@ net = ResNet18()
 # net = VGG('VGG16')
 net = net.to(device)
 netname = net.__class__.__name__
+net_BC = BC(net)
 
 
 #Définition des paramètres
@@ -119,7 +121,7 @@ log_path = f"../Experimentations/logs/logs_{heure_fichier}_{netname}.csv"
 #Header du logfile
 with open(log_path, mode='w', newline='') as f:
     writer = csv.writer(f)
-    writer.writerow(['epoch', 'train_loss', 'test_loss', 'learning_rate', 'train_acc', 'test_acc', 'training_time', 'testing_time', 'mixup_used']) # En-têtes
+    writer.writerow(['epoch', 'train_loss', 'test_loss', 'learning_rate', 'train_acc', 'test_acc', 'training_time', 'testing_time', 'mixup_used', 'binary_connect_used']) # En-têtes
 
 def gethour():
     return datetime.now()
@@ -150,7 +152,7 @@ f.savefig(f'../Experimentations/batchplot/DA_{heure_fichier}.png')
 
 print("Début de l'entraînement...")
 
-def train(epoch, use_mixup=True):
+def train(epoch, use_mixup=False, use_BC = True):
     print('\nEpoch: %d' % epoch)
     start_time = gethour()
     net.train()
@@ -161,6 +163,11 @@ def train(epoch, use_mixup=True):
 
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
+        
+        if use_BC:
+            net_BC.binarization()
+            bc_used = "yes"
+
         optimizer.zero_grad()
         
         if use_mixup:
@@ -183,6 +190,10 @@ def train(epoch, use_mixup=True):
 
         loss.backward()
         optimizer.step()
+
+        if use_BC:
+            net_BC.clip()
+
         train_loss += loss.item()
 
         avg_loss = train_loss / (batch_idx + 1)
@@ -195,12 +206,15 @@ def train(epoch, use_mixup=True):
         
     duration = gethour() - start_time
     current_lr = optimizer.param_groups[0]['lr']
-    return avg_loss, train_acc, current_lr, duration, mixup_used
+    return avg_loss, train_acc, current_lr, duration, mixup_used, bc_used
 
 
-def test(epoch):
+def test(epoch, use_mixup=False, use_BC = True):
     global best_acc
     start_time = gethour()
+    timestamp = datetime.now().strftime("%H%M%S")
+    binary = "BC" if use_BC else "FP32"
+    mixup = "Mixup" if use_mixup else "NoMixup"
     net.eval()
     test_loss = 0
     correct = 0
@@ -224,8 +238,6 @@ def test(epoch):
 
             msg = f'Loss: {test_loss/(batch_idx+1):.3f} | Acc: {test_acc:.2f}%'
             progress_bar(batch_idx, total_batches, msg)
-            # progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)\n'
-            #              % (test_loss/(batch_idx+1), test_acc , correct, total))
         # Save checkpoint.
         if test_acc > best_acc:
             print(f'Saving best model - Accuracy : {test_acc:.2f} %')
@@ -239,7 +251,7 @@ def test(epoch):
             }
             if not os.path.isdir('checkpoint'):
                 os.mkdir('checkpoint')
-            torch.save(state, f'./checkpoint/ckpt_{net.__class__.__name__}.pth')
+            torch.save(state, f'./checkpoint/ckpt_{net.__class__.__name__}-{timestamp}-{mixup}-{binary}.pth')
             best_acc = test_acc
         
         duration = gethour() - start_time 
@@ -250,13 +262,13 @@ def test(epoch):
 
 #Boucle principale
 for epoch in range(start_epoch, n_epochs):
-    tr_loss, tr_acc, lr_rate, hrtrainepoch, mixup_used= train(epoch)
+    tr_loss, tr_acc, lr_rate, hrtrainepoch, mixup_used, bc_used= train(epoch)
     te_acc, te_loss, hrtestepoch = test(epoch)
     scheduler.step()
 
     with open(log_path, mode = 'a', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow([epoch+1, f"{tr_loss:.3f}", f"{te_loss:.3f}", lr_rate, f"{tr_acc:.2f}", f"{te_acc:.2f}", hrtrainepoch, hrtestepoch, mixup_used])
+        writer.writerow([epoch+1, f"{tr_loss:.3f}", f"{te_loss:.3f}", lr_rate, f"{tr_acc:.2f}", f"{te_acc:.2f}", hrtrainepoch, hrtestepoch, mixup_used, bc_used])
 
 
 print('Entraînement terminé.')
