@@ -152,7 +152,7 @@ f.savefig(f'../Experimentations/batchplot/DA_{heure_fichier}.png')
 
 print("Début de l'entraînement...")
 
-def train(epoch, use_mixup=False, use_BC = True):
+def train(epoch, use_mixup=True, use_BC = False):
     print('\nEpoch: %d' % epoch)
     start_time = gethour()
     net.train()
@@ -188,6 +188,7 @@ def train(epoch, use_mixup=False, use_BC = True):
             correct += predicted.eq(targets).sum().item()
             mixup_used = "no"
 
+        net_BC.restore()
         loss.backward()
         optimizer.step()
 
@@ -209,10 +210,12 @@ def train(epoch, use_mixup=False, use_BC = True):
     return avg_loss, train_acc, current_lr, duration, mixup_used, bc_used
 
 
-def test(epoch, use_mixup=False, use_BC = True):
+def test(epoch, use_mixup=True, use_BC = False):
     global best_acc
     start_time = gethour()
     timestamp = datetime.now().strftime("%H%M%S")
+    if use_BC:
+        net_BC.binarization()
     binary = "BC" if use_BC else "FP32"
     mixup = "Mixup" if use_mixup else "NoMixup"
     net.eval()
@@ -240,6 +243,7 @@ def test(epoch, use_mixup=False, use_BC = True):
             progress_bar(batch_idx, total_batches, msg)
         # Save checkpoint.
         if test_acc > best_acc:
+            if use_BC : net_BC.restore()
             print(f'Saving best model - Accuracy : {test_acc:.2f} %')
             state = {
                 'net': net.state_dict(),
@@ -253,7 +257,8 @@ def test(epoch, use_mixup=False, use_BC = True):
                 os.mkdir('checkpoint')
             torch.save(state, f'./checkpoint/ckpt_{net.__class__.__name__}-{timestamp}-{mixup}-{binary}.pth')
             best_acc = test_acc
-        
+            if use_BC : net_BC.binarization()
+
         duration = gethour() - start_time 
         return test_acc, avg_loss, duration
 
