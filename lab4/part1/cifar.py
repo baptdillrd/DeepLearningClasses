@@ -2,11 +2,11 @@ import torch
 from torchvision.datasets import CIFAR10
 import torchvision.transforms as transforms
 from torch.utils.data.dataloader import DataLoader
+import torch.nn.utils.prune as prune
 import os
 from matplotlib import pyplot as plt
 import numpy as np
 from binaryconnect import BC
-
 import csv
 from datetime import datetime
 from models.utils import progress_bar
@@ -14,6 +14,8 @@ from models.resnet import *
 from models.densenet import *
 from models.preact_resnet import *
 from models.vgg import *
+
+
 
 #Instanciation des listes de données 
 list_losses = []
@@ -36,7 +38,6 @@ transform_train = transforms.Compose([
     transforms.ToTensor(),
     normalize_scratch,
 ])
-
 transform_test = transforms.Compose([
     transforms.ToTensor(),
     normalize_scratch,
@@ -44,10 +45,8 @@ transform_test = transforms.Compose([
 
 #Importation des données de CIFAR10 et définition des loader de test et de train
 rootdir = '/opt/img/effdl-cifar10/'
-
 c10train = CIFAR10(rootdir,train=True,download=True,transform=transform_train)
 c10test = CIFAR10(rootdir,train=False,download=True,transform=transform_test)
-
 trainloader = DataLoader(c10train,batch_size=64,shuffle=True)
 testloader = DataLoader(c10test,batch_size=64)
 
@@ -74,10 +73,8 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
 start_epoch = 0 #époque de départ
 best_acc = 0 #Définition de la meilleure accuracy
 
-
 #Fonction de resume
 resume = False      #A changer en True si on charge un modèle existant
-
 if resume:
     print('==> Resuming from checkpoint..')
     ckpt_path = f'./checkpoint/ckpt_{net.__class__.__name__}.pth'
@@ -107,11 +104,44 @@ def mixup_data(x, y, alpha=1.0, device='cuda'):
     mixed_x = lam * x + (1 - lam) * x[index, :]
     y_a, y_b = y, y[index]
     return mixed_x, y_a, y_b, lam
-
-
 #Calcule la perte mixée
 def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+
+
+choix_prune = "global_unstructured"     #global_unstructured   /   local_structured
+ratio = 0.3
+#Implémentation du pruning
+def apply_custom_pruning(model, method=choix_prune, amount=ratio):
+    if method == "global_unstructured":
+        # On cible toutes les couches Conv et Linéaires pour un élagage global
+        parameters_to_prune = []
+        for m in model.modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                parameters_to_prune.append((m, 'weight'))
+        
+        prune.global_unstructured(
+            parameters_to_prune,
+            pruning_method=prune.L1Unstructured,
+            amount=amount,
+        )
+        print(f"==> Global Unstructured Pruning applied: {amount*100}%")
+
+    elif method == "local_structured":
+        # On cible uniquement les Convolutions pour supprimer des filtres (canaux)
+        for m in model.modules():
+            if isinstance(m, nn.Conv2d):
+                prune.ln_structured(m, name="weight", amount=amount, n=2, dim=0)
+        print(f"==> Local Structured Pruning applied: {amount*100}% per layer")
+
+def finalize_pruning(model):
+    for m in model.modules():
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+            try:
+                prune.remove(m, 'weight')
+            except ValueError:
+                pass
+
 
 
 #Création du fichier de logs
@@ -123,6 +153,7 @@ with open(log_path, mode='w', newline='') as f:
     writer = csv.writer(f)
     writer.writerow(['epoch', 'train_loss', 'test_loss', 'learning_rate', 'train_acc', 'test_acc', 'training_time', 'testing_time', 'mixup_used', 'binary_connect_used']) # En-têtes
 
+#Définition de l'heure du début d'entrainement
 def gethour():
     return datetime.now()
 heurepretraining = gethour()
@@ -145,13 +176,11 @@ for i,(data,target) in enumerate(trainloader):
     plt.imshow(data[3].swapaxes(0,2).swapaxes(0,1))
 
     break
-
 f.savefig(f'../Experimentations/batchplot/DA_{heure_fichier}.png')
 
 
 
 print("Début de l'entraînement...")
-
 def train(epoch, use_mixup=True, use_BC = False):
     print('\nEpoch: %d' % epoch)
     start_time = gethour()
@@ -209,7 +238,6 @@ def train(epoch, use_mixup=True, use_BC = False):
     current_lr = optimizer.param_groups[0]['lr']
     return avg_loss, train_acc, current_lr, duration, mixup_used, bc_used
 
-
 def test(epoch, use_mixup=True, use_BC = False):
     global best_acc
     start_time = gethour()
@@ -263,6 +291,8 @@ def test(epoch, use_mixup=True, use_BC = False):
         return test_acc, avg_loss, duration
 
 
+resume
+
 
 
 #Boucle principale
@@ -270,12 +300,9 @@ for epoch in range(start_epoch, n_epochs):
     tr_loss, tr_acc, lr_rate, hrtrainepoch, mixup_used, bc_used= train(epoch)
     te_acc, te_loss, hrtestepoch = test(epoch)
     scheduler.step()
-
     with open(log_path, mode = 'a', newline='') as f:
         writer = csv.writer(f)
         writer.writerow([epoch+1, f"{tr_loss:.3f}", f"{te_loss:.3f}", lr_rate, f"{tr_acc:.2f}", f"{te_acc:.2f}", hrtrainepoch, hrtestepoch, mixup_used, bc_used])
-
-
 print('Entraînement terminé.')
 
 
