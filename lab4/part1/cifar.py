@@ -4,10 +4,12 @@ import torchvision.transforms as transforms
 from torch.utils.data.dataloader import DataLoader
 import torch.nn.utils.prune as prune
 import os
-from matplotlib import pyplot as plt
 import numpy as np
-from binaryconnect import BC
 import csv
+
+from cifarutils import trainloader, testloader
+from matplotlib import pyplot as plt
+from binaryconnect import BC
 from datetime import datetime
 from models.utils import progress_bar
 from models.resnet import *
@@ -24,31 +26,6 @@ test_accuracies = []
 
 #Définition du GPU
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-#Centrage des données sur la base du modèle
-normalize_scratch = transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-
-#Modification des données d'entrainement et normalisation des données d'entrainement et de test
-transform_train = transforms.Compose([
-    transforms.RandomCrop(32, padding=4),
-    transforms.RandomHorizontalFlip(),
-    transforms.RandomRotation(15),
-    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-    transforms.RandomGrayscale(p=0.1),
-    transforms.ToTensor(),
-    normalize_scratch,
-])
-transform_test = transforms.Compose([
-    transforms.ToTensor(),
-    normalize_scratch,
-])
-
-#Importation des données de CIFAR10 et définition des loader de test et de train
-rootdir = '/opt/img/effdl-cifar10/'
-c10train = CIFAR10(rootdir,train=True,download=True,transform=transform_train)
-c10test = CIFAR10(rootdir,train=False,download=True,transform=transform_test)
-trainloader = DataLoader(c10train,batch_size=64,shuffle=True)
-testloader = DataLoader(c10test,batch_size=64)
 
 
 
@@ -104,96 +81,10 @@ def mixup_data(x, y, alpha=1.0, device='cuda'):
     mixed_x = lam * x + (1 - lam) * x[index, :]
     y_a, y_b = y, y[index]
     return mixed_x, y_a, y_b, lam
+
 #Calcule la perte mixée
 def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
-
-
-choix_prune = "global_unstructured"     #global_unstructured   /   local_structured
-ratio = 0.3
-if choix_prune == "global_unstructured":
-    ps = 0
-    pu = ratio
-elif choix_prune == "local_structured":
-    ps = ratio
-    pu = 0
-
-#Implémentation du pruning
-def apply_custom_pruning(model, method=choix_prune, amount=ratio):
-    if method == "global_unstructured":
-        # On cible toutes les couches Conv et Linéaires pour un élagage global
-        parameters_to_prune = []
-        for m in model.modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-                parameters_to_prune.append((m, 'weight'))
-        
-        prune.global_unstructured(
-            parameters_to_prune,
-            pruning_method=prune.L1Unstructured,
-            amount=amount,
-        )
-        print(f"==> Global Unstructured Pruning applied: {amount*100}%")
-
-    elif method == "local_structured":
-        # On cible uniquement les Convolutions pour supprimer des filtres (canaux)
-        for m in model.modules():
-            if isinstance(m, nn.Conv2d):
-                prune.ln_structured(m, name="weight", amount=amount, n=2, dim=0)
-        print(f"==> Local Structured Pruning applied: {amount*100}% per layer")
-
-def finalize_pruning(model):
-    for m in model.modules():
-        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-            try:
-                prune.remove(m, 'weight')
-            except ValueError:
-                pass
-
-def apply_advanced_pruning(model, type="unstructured", scope="global", amount=0.3):
-    """
-    type: "unstructured" (poids par poids) ou "structured" (filtres entiers)
-    scope: "global" (sur tout le réseau) ou "local" (couche par couche)
-    """
-    if scope == "global":
-        # Le pruning global est forcément unstructured dans PyTorch natif
-        parameters_to_prune = []
-        for m in model.modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-                parameters_to_prune.append((m, 'weight'))
-        
-        prune.global_unstructured(
-            parameters_to_prune,
-            pruning_method=prune.L1Unstructured,
-            amount=amount,
-        )
-    else: # Local
-        for m in model.modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-                if type == "unstructured":
-                    prune.l1_unstructured(m, name="weight", amount=amount)
-                else: # Structured (uniquement sur Conv2d pour les filtres)
-                    if isinstance(m, nn.Conv2d):
-                        prune.ln_structured(m, name="weight", amount=amount, n=2, dim=0)
-    
-    print(f"==> {scope.capitalize()} {type.capitalize()} Pruning appliqué: {amount*100}%")
-
-
-def calculate_lab4_score(model, ps, pu, qw=32, qa=32):
-    W_REF = 5.6e6
-    F_REF = 2.8e8
-    
-    # Nombre de paramètres (w) et opérations (f)
-    # Pour un ResNet18 sur CIFAR10, f est environ 1.8e9 MACs
-    w = sum(p.numel() for p in model.parameters())
-    f = 1.8e9 
-    
-    # Terme lié aux paramètres
-    score_param = ((1 - (ps + pu)) * (qw / 32) * w) / W_REF
-    
-    # Terme lié aux opérations (FLOPs)
-    score_ops = ((1 - ps) * (max(qw, qa) / 32) * f) / F_REF
-    
-    return score_param + score_ops
 
 
 #Création du fichier de logs
@@ -284,8 +175,6 @@ def train(epoch, use_mixup=True, use_BC = False):
 
         msg = f'Loss: {avg_loss:.3f} | Acc: {train_acc:.2f}%'
         progress_bar(batch_idx, total_batches, msg)
-        # progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
-        #              % (avg_loss, train_acc, correct, total))
         
     duration = gethour() - start_time
     current_lr = optimizer.param_groups[0]['lr']
@@ -343,8 +232,6 @@ def test(epoch, use_mixup=True, use_BC = False):
         duration = gethour() - start_time 
         return test_acc, avg_loss, duration
 
-apply_custom_pruning()      #on applique le pruning
-
 #Boucle principale
 for epoch in range(start_epoch, n_epochs):
     tr_loss, tr_acc, lr_rate, hrtrainepoch, mixup_used, bc_used= train(epoch)
@@ -354,8 +241,6 @@ for epoch in range(start_epoch, n_epochs):
         writer = csv.writer(f)
         writer.writerow([epoch+1, f"{tr_loss:.3f}", f"{te_loss:.3f}", lr_rate, f"{tr_acc:.2f}", f"{te_acc:.2f}", hrtrainepoch, hrtestepoch, mixup_used, bc_used])
 print('Entraînement terminé.')
-
-score = (((1-(ps+pu))*(qw/32)*w)/5.6*10^6)+(((1-ps)*((max(qw, qa))/32)*f)/2.8*10^8)
 
 #Définition du temps d'entrainement, du nom du modèle utilisé et du nombre de paramètres
 heureposttraining = datetime.now()
