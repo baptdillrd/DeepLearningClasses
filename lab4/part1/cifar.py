@@ -77,7 +77,7 @@ best_acc = 0 #Définition de la meilleure accuracy
 resume = False      #A changer en True si on charge un modèle existant
 if resume:
     print('==> Resuming from checkpoint..')
-    ckpt_path = f'./checkpoint/ckpt_{net.__class__.__name__}.pth'
+    ckpt_path = f'./weight_used/.pth'       #A compléter si on utilise resume
     if os.path.isfile(ckpt_path):
         checkpoint = torch.load(ckpt_path)
         net.load_state_dict(checkpoint['net'])
@@ -111,6 +111,13 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
 
 choix_prune = "global_unstructured"     #global_unstructured   /   local_structured
 ratio = 0.3
+if choix_prune == "global_unstructured":
+    ps = 0
+    pu = ratio
+elif choix_prune == "local_structured":
+    ps = ratio
+    pu = 0
+
 #Implémentation du pruning
 def apply_custom_pruning(model, method=choix_prune, amount=ratio):
     if method == "global_unstructured":
@@ -142,6 +149,51 @@ def finalize_pruning(model):
             except ValueError:
                 pass
 
+def apply_advanced_pruning(model, type="unstructured", scope="global", amount=0.3):
+    """
+    type: "unstructured" (poids par poids) ou "structured" (filtres entiers)
+    scope: "global" (sur tout le réseau) ou "local" (couche par couche)
+    """
+    if scope == "global":
+        # Le pruning global est forcément unstructured dans PyTorch natif
+        parameters_to_prune = []
+        for m in model.modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                parameters_to_prune.append((m, 'weight'))
+        
+        prune.global_unstructured(
+            parameters_to_prune,
+            pruning_method=prune.L1Unstructured,
+            amount=amount,
+        )
+    else: # Local
+        for m in model.modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                if type == "unstructured":
+                    prune.l1_unstructured(m, name="weight", amount=amount)
+                else: # Structured (uniquement sur Conv2d pour les filtres)
+                    if isinstance(m, nn.Conv2d):
+                        prune.ln_structured(m, name="weight", amount=amount, n=2, dim=0)
+    
+    print(f"==> {scope.capitalize()} {type.capitalize()} Pruning appliqué: {amount*100}%")
+
+
+def calculate_lab4_score(model, ps, pu, qw=32, qa=32):
+    W_REF = 5.6e6
+    F_REF = 2.8e8
+    
+    # Nombre de paramètres (w) et opérations (f)
+    # Pour un ResNet18 sur CIFAR10, f est environ 1.8e9 MACs
+    w = sum(p.numel() for p in model.parameters())
+    f = 1.8e9 
+    
+    # Terme lié aux paramètres
+    score_param = ((1 - (ps + pu)) * (qw / 32) * w) / W_REF
+    
+    # Terme lié aux opérations (FLOPs)
+    score_ops = ((1 - ps) * (max(qw, qa) / 32) * f) / F_REF
+    
+    return score_param + score_ops
 
 
 #Création du fichier de logs
@@ -218,7 +270,8 @@ def train(epoch, use_mixup=True, use_BC = False):
             mixup_used = "no"
 
         loss.backward()
-        net_BC.restore()
+        if use_BC:
+            net_BC.restore()
         optimizer.step()
 
         if use_BC:
@@ -290,10 +343,7 @@ def test(epoch, use_mixup=True, use_BC = False):
         duration = gethour() - start_time 
         return test_acc, avg_loss, duration
 
-
-resume
-
-
+apply_custom_pruning()      #on applique le pruning
 
 #Boucle principale
 for epoch in range(start_epoch, n_epochs):
@@ -305,7 +355,7 @@ for epoch in range(start_epoch, n_epochs):
         writer.writerow([epoch+1, f"{tr_loss:.3f}", f"{te_loss:.3f}", lr_rate, f"{tr_acc:.2f}", f"{te_acc:.2f}", hrtrainepoch, hrtestepoch, mixup_used, bc_used])
 print('Entraînement terminé.')
 
-
+score = (((1-(ps+pu))*(qw/32)*w)/5.6*10^6)+(((1-ps)*((max(qw, qa))/32)*f)/2.8*10^8)
 
 #Définition du temps d'entrainement, du nom du modèle utilisé et du nombre de paramètres
 heureposttraining = datetime.now()

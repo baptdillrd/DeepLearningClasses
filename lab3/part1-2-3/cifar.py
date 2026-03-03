@@ -67,10 +67,10 @@ net_BC = BC(net)
 #Définition des paramètres
 criterion = torch.nn.CrossEntropyLoss() #définition de la fonction de perte
 #définition de l'optimiseur (modifie les poids du réseau en fonction de la loss)
-optimizer = torch.optim.SGD(net.parameters(), lr=0.05, momentum=0.9, weight_decay=5e-4)
-n_epochs = 100  #nombre d'époques
+optimizer = torch.optim.SGD(net.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
+n_epochs = 500  #nombre d'époques
 
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=500)
 start_epoch = 0 #époque de départ
 best_acc = 0 #Définition de la meilleure accuracy
 
@@ -95,7 +95,7 @@ if resume:
 
 #Fonction de mixup (à ajouter ou non durant l'entrainement)
 #Le mixup retourne les entrées mixées, les deux paires de cibles et lambda
-def mixup_data(x, y, alpha=1.0, device='cuda'):
+def mixup_data(x, y, alpha=0.2, device='cuda'):
     if alpha > 0:
         lam = np.random.beta(alpha, alpha)
     else:
@@ -152,7 +152,7 @@ f.savefig(f'../Experimentations/batchplot/DA_{heure_fichier}.png')
 
 print("Début de l'entraînement...")
 
-def train(epoch, use_mixup=True, use_BC = False):
+def train(epoch, use_mixup=False, use_BC = True):
     print('\nEpoch: %d' % epoch)
     start_time = gethour()
     net.train()
@@ -189,7 +189,8 @@ def train(epoch, use_mixup=True, use_BC = False):
             mixup_used = "no"
 
         loss.backward()
-        net_BC.restore()
+        if use_BC:
+            net_BC.restore()
         optimizer.step()
 
         if use_BC:
@@ -210,7 +211,7 @@ def train(epoch, use_mixup=True, use_BC = False):
     return avg_loss, train_acc, current_lr, duration, mixup_used, bc_used
 
 
-def test(epoch, use_mixup=True, use_BC = False):
+def test(epoch, use_mixup=False, use_BC = True):
     global best_acc
     start_time = gethour()
     timestamp = datetime.now().strftime("%H%M%S")
@@ -243,22 +244,29 @@ def test(epoch, use_mixup=True, use_BC = False):
             progress_bar(batch_idx, total_batches, msg)
         # Save checkpoint.
         if test_acc > best_acc:
-            if use_BC : net_BC.restore()
-            print(f'Saving best model - Accuracy : {test_acc:.2f} %')
+            best_acc = test_acc
+            print(f'==> Nouveau record ! Sauvegarde en cours : {test_acc:.2f}%')
+            
+            if use_BC: net_BC.restore()
+            
             state = {
                 'net': net.state_dict(),
                 'optimizer' : optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict(),
                 'acc': test_acc,
                 'epoch': epoch,
-                'net_name' : net.__class__.__name__
+                'net_name': netname
             }
+            
             if not os.path.isdir('checkpoint'):
                 os.mkdir('checkpoint')
-            torch.save(state, f'./checkpoint/ckpt_{net.__class__.__name__}-{timestamp}-{mixup}-{binary}.pth')
-            best_acc = test_acc
-            if use_BC : net_BC.binarization()
-
+                
+            # Nom de fichier fixe par simulation pour éviter la surcharge
+            binary_label = "BC" if use_BC else "FP32"
+            save_path = f'./checkpoint/BEST_ckpt_{netname}_{heure_fichier}_{binary_label}.pth'
+            torch.save(state, save_path)
+            
+            if use_BC: net_BC.binarization()
         duration = gethour() - start_time 
         return test_acc, avg_loss, duration
 
