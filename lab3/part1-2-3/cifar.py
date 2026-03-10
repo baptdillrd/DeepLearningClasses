@@ -15,6 +15,7 @@ from models.densenet import *
 from models.preact_resnet import *
 from models.vgg import *
 
+
 #Instanciation des listes de données 
 list_losses = []
 train_accuracies = []
@@ -68,9 +69,9 @@ net_BC = BC(net)
 criterion = torch.nn.CrossEntropyLoss() #définition de la fonction de perte
 #définition de l'optimiseur (modifie les poids du réseau en fonction de la loss)
 optimizer = torch.optim.SGD(net.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
-n_epochs = 500  #nombre d'époques
+n_epochs = 200  #nombre d'époques
 
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=500)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 start_epoch = 0 #époque de départ
 best_acc = 0 #Définition de la meilleure accuracy
 
@@ -152,7 +153,7 @@ f.savefig(f'../Experimentations/batchplot/DA_{heure_fichier}.png')
 
 print("Début de l'entraînement...")
 
-def train(epoch, use_mixup=False, use_BC = True):
+def train(epoch, use_mixup=True, use_BC = False):
     print('\nEpoch: %d' % epoch)
     start_time = gethour()
     net.train()
@@ -211,7 +212,7 @@ def train(epoch, use_mixup=False, use_BC = True):
     return avg_loss, train_acc, current_lr, duration, mixup_used, bc_used
 
 
-def test(epoch, use_mixup=False, use_BC = True):
+def test(epoch, use_mixup=True, use_BC = False):
     global best_acc
     start_time = gethour()
     timestamp = datetime.now().strftime("%H%M%S")

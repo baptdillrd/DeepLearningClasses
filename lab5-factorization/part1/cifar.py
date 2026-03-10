@@ -17,6 +17,8 @@ from models.resnet import *
 from models.densenet import *
 from models.preact_resnet import *
 from models.vgg import *
+from models.mobilenetv2 import *
+from models.resnet_fac import *
 
 
 
@@ -32,10 +34,12 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 #Définition du modèle
 print('==> Building model..')
-net = ResNet18()
+# net = ResNet18()
 # net = DenseNet121()
 # net = PreActResNet18()
 # net = VGG('VGG16')
+#net = ResNet18Factorized()
+net = MobileNetV2()
 net = net.to(device)
 netname = net.__class__.__name__
 net_BC = BC(net)
@@ -45,9 +49,9 @@ net_BC = BC(net)
 criterion = torch.nn.CrossEntropyLoss() #définition de la fonction de perte
 #définition de l'optimiseur (modifie les poids du réseau en fonction de la loss)
 optimizer = torch.optim.SGD(net.parameters(), lr=0.05, momentum=0.9, weight_decay=5e-4)
-n_epochs = 100  #nombre d'époques
+n_epochs = 200  #nombre d'époques
 
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 start_epoch = 0 #époque de départ
 best_acc = 0 #Définition de la meilleure accuracy
 
@@ -93,7 +97,9 @@ def train(epoch, use_mixup=True, use_BC = False):
     print('\nEpoch: %d' % epoch)
     start_time = cu.gethour()
     net.train()
-    train_loss, correct, total = 0
+    train_loss = 0
+    correct = 0
+    total = 0
     total_batches = len(trainloader)
     bc_used = "yes" if use_BC else "no"
 
@@ -153,7 +159,10 @@ def test(epoch, use_mixup=True, use_BC = False):
     mixup = "Mixup" if use_mixup else "NoMixup"
 
     net.eval()
-    test_loss, correct, total, test_acc = 0
+    test_loss = 0
+    correct = 0
+    total = 0
+    test_acc = 0
     total_batches = len(trainloader)
 
     with torch.no_grad():
