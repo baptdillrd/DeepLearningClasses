@@ -7,7 +7,7 @@ from cifarutils import testloader
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-#model = ResNet18Factorized().to(device)
+#model = ResNet18().to(device)
 model = MobileNetV2().to(device)
 
 path = "./checkpoint/ckpt_3b_mbnetv2_pruned_final.pth"

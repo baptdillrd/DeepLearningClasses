@@ -38,8 +38,8 @@ print('==> Building model..')
 # net = DenseNet121()
 # net = PreActResNet18()
 # net = VGG('VGG16')
-net = ResNet18Factorized()
-# net = MobileNetV2()
+#net = ResNet18Factorized()
+net = MobileNetV2()
 net = net.to(device)
 netname = net.__class__.__name__
 net_BC = BC(net)
@@ -152,7 +152,7 @@ def train(epoch, use_mixup=True, use_BC = False):
 def test(epoch, use_mixup=True, use_BC = False):
     global best_acc
     start_time = cu.gethour()
-    timestamp = datetime.now().strftime("%Y-%m-%d")
+    timestamp = datetime.now().strftime("%H%M%S")
     if use_BC:
         net_BC.binarization()
     binary = "BC" if use_BC else "FP32"

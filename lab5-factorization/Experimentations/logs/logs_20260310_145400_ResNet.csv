@@ -1,0 +1,2 @@
+epoch,train_loss,test_loss,learning_rate,train_acc,test_acc,training_time,testing_time,mixup_used,binary_connect_used
+1,2.038,1.535,0.05,27.15,44.43,0:04:37.719799,0:00:28.044553,yes,no

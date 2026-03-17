@@ -6,7 +6,6 @@ import cifarutils as cu
 
 from models.resnet import *
 from models.mobilenetv2 import *
-from models.resnet_fac import *
 from cifarutils import *
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -30,11 +29,11 @@ def test_accuracy(net):
 # 1. Charger modèle
 ###################################
 
-net = ResNet18Factorized().to(device)
-#net = MobileNetV2().to(device)
+#net = ResNet18().to(device)
+net = MobileNetV2().to(device)
 
 checkpoint = torch.load(
-    "./checkpoint/ckpt_ResNet-2026-03-11-Mixup-FP32.pth",
+    "./checkpoint/ckpt_MobileNetV2-152118-Mixup-FP32.pth",
     map_location=device
 )
 
