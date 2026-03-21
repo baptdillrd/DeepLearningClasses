@@ -8,7 +8,7 @@ import numpy as np
 import csv
 import cifarutils as cu
 
-from cifarutils import trainloader, testloader, transform_train, transform_test
+from cifarutils import trainloader, testloader
 from matplotlib import pyplot as plt
 from binaryconnect import BC
 from datetime import datetime
@@ -19,6 +19,7 @@ from models.preact_resnet import *
 from models.vgg import *
 from models.mobilenetv2 import *
 from models.resnet_fac import *
+from models.resnet_light import *
 
 
 
@@ -34,11 +35,11 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 #Définition du modèle
 print('==> Building model..')
-# net = ResNet18()
+net = ResNet18()
 # net = DenseNet121()
 # net = PreActResNet18()
 # net = VGG('VGG16')
-net = ResNet18Factorized()
+# net = ResNet18Factorized()
 # net = MobileNetV2()
 net = net.to(device)
 netname = net.__class__.__name__
@@ -123,7 +124,6 @@ def train(epoch, use_mixup=True, use_BC = False):
         else:
             outputs = net(inputs)
             loss = criterion(outputs, targets)
-            
             _, predicted = outputs.max(1)
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()

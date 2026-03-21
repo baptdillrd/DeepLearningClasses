@@ -2,78 +2,162 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import os
+import csv
 import cifarutils as cu
-from models.resnet_fac import ResNet18Factorized
-from models.mobilenetv2 import MobileNetV2
+from datetime import datetime
+from cifarutils import trainloader, testloader
 from models.utils import progress_bar
+from models.resnet_light import *
 
+# Définition du GPU
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-# Chargement du TEACHER (Ton modèle déjà entraîné)
-teacher = ResNet18Factorized().to(device)
-checkpoint = torch.load('./checkpoint/ckpt_ResNet-2026-03-11-Mixup-FP32.pth', map_location=device)
-teacher.load_state_dict(checkpoint['net'])
-teacher.eval() # Important : Toujours en eval
+print('==> Preparing models..')
 
-# Création de l'ÉTUDIANT (Plus léger)
-student = MobileNetV2().to(device)
+teachernet = ResNet18()
+teacher = teachernet.to(device)
+teacher_path = './checkpoint/ckpt_ResNet-Best-Mixup-FP32.pth'
+checkpoint_teacher = torch.load(teacher_path, map_location=device)
+teacher.load_state_dict(checkpoint_teacher['net'])
+teacher.eval()
 
-# T > 1 lisse les probabilités pour révéler les relations entre classes [cite: 108, 120]
-temperature = 4.0 
-# Poids entre la CrossEntropy classique et la Distillation [cite: 103]
-alpha = 0.7 
+net = Loicnet()
+student = net.to(device)
+netname = f"Distill_Student_{net.__class__.__name__}"
 
-optimizer = optim.SGD(student.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
+temperature = 4.0
+alpha = 0.7
+
 criterion_cls = nn.CrossEntropyLoss()
-# KLDivLoss pour comparer les "Soft Labels" [cite: 106, 118]
-criterion_kd = nn.KLDivLoss(reduction='batchmean') 
+criterion_kd = nn.KLDivLoss(reduction='batchmean')
+optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
+scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 
-def distillation_loss(student_outputs, teacher_outputs, labels, T, alpha):
-    # 1. Perte classique (Hard labels)
-    soft_loss = criterion_cls(student_outputs, labels)
-    
-    # 2. Perte de distillation (Soft labels) [cite: 103, 107]
-    # On applique la température sur les logits avant le softmax
+n_epochs = 200
+best_acc = 0
+start_epoch = 0
+
+# --- FONCTION DE PERTE ADAPTÉE AU MIXUP ---
+def distillation_loss(student_outputs, teacher_outputs, labels, T, alpha, labels_b=None, lam=None):
+    # Partie Distillation (Soft labels) - Toujours la même sur l'image (mixée ou non)
     p_s = F.log_softmax(student_outputs / T, dim=1)
     p_t = F.softmax(teacher_outputs / T, dim=1)
-    
-    # On multiplie par T^2 pour compenser la réduction de l'amplitude des gradients [cite: 109, 121]
     distill_loss = criterion_kd(p_s, p_t) * (T**2)
     
-    return alpha * distill_loss + (1.0 - alpha) * soft_loss
+    # Partie Classification (Hard labels)
+    if lam is not None and labels_b is not None:
+        # Si Mixup : perte pondérée entre target A et target B
+        hard_loss = lam * criterion_cls(student_outputs, labels) + (1 - lam) * criterion_cls(student_outputs, labels_b)
+    else:
+        hard_loss = criterion_cls(student_outputs, labels)
+    
+    return alpha * distill_loss + (1.0 - alpha) * hard_loss
 
+heure_fichier = datetime.now().strftime("%Y%m%d_%H%M%S")
+log_path = f"../Experimentations/logs/distillation_logs_{heure_fichier}_{netname}.csv"
 
-def train_student(epoch):
-    student.train()
+if not os.path.exists("../Experimentations/logs/"):
+    os.makedirs("../Experimentations/logs/")
+
+with open(log_path, mode='w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(['epoch', 'train_loss', 'test_loss', 'learning_rate', 
+                     'train_acc', 'test_acc', 'training_time', 'testing_time', 'mixup_used'])
+
+def train(epoch, use_mixup=True):
+    print('\nEpoch: %d' % epoch)
+    start_time = cu.gethour()
+    net.train()
     train_loss = 0
     correct = 0
     total = 0
     
-    for batch_idx, (inputs, targets) in enumerate(cu.trainloader):
+    for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
-        
         optimizer.zero_grad()
         
-        # Forward de l'étudiant
-        student_outputs = student(inputs)
+        if use_mixup:
+            inputs, targets_a, targets_b, lam = cu.mixup_data(inputs, targets, alpha=1.0, device=device)
+            mixup_used = "yes"
+        else:
+            targets_a, targets_b, lam = targets, None, None
+            mixup_used = "no"
+
+        # Forward étudiant
+        outputs = net(inputs)
         
-        # Forward du maître (sans calcul de gradient pour gagner de la mémoire)
+        # Forward Maître (sans gradients)
         with torch.no_grad():
             teacher_outputs = teacher(inputs)
         
-        # Calcul de la perte hybride
-        loss = distillation_loss(student_outputs, teacher_outputs, targets, temperature, alpha)
+        # Calcul de la perte de distillation (avec ou sans paramètres mixup)
+        loss = distillation_loss(outputs, teacher_outputs, targets_a, temperature, alpha, targets_b, lam)
         
         loss.backward()
         optimizer.step()
 
         train_loss += loss.item()
-        _, predicted = student_outputs.max(1)
+        
+        # Calcul de l'accuracy pour le monitoring
+        _, predicted = outputs.max(1)
         total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
+        if use_mixup:
+            correct += (lam * predicted.eq(targets_a).sum().item() + (1 - lam) * predicted.eq(targets_b).sum().item())
+        else:
+            correct += predicted.eq(targets_a).sum().item()
 
-        progress_bar(batch_idx, len(cu.trainloader), f'Loss: {train_loss/(batch_idx+1):.3f} | Acc: {100.*correct/total:.2f}%')
+        avg_loss = train_loss / (batch_idx + 1)
+        train_acc = 100.*correct/total
+        progress_bar(batch_idx, len(trainloader), f'Loss: {avg_loss:.3f} | Acc: {train_acc:.2f}%')
+        
+    duration = cu.gethour() - start_time
+    # On retourne aussi mixup_used pour les logs
+    return avg_loss, train_acc, optimizer.param_groups[0]['lr'], duration, mixup_used
 
-# Lancement
-for epoch in range(20):
-    train_student(epoch)
+def test(epoch):
+    global best_acc
+    start_time = cu.gethour()
+    net.eval()
+    test_loss = 0
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for batch_idx, (inputs, targets) in enumerate(testloader):
+            inputs, targets = inputs.to(device), targets.to(device)
+            outputs = net(inputs)
+            loss = criterion_cls(outputs, targets)
+
+            test_loss += loss.item()
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+
+    acc = 100.*correct/total
+    avg_loss = test_loss / len(testloader)
+    
+    if acc > best_acc:
+        print(f'Saving best student.. Acc: {acc:.2f}%')
+        state = {'net': net.state_dict(), 'acc': acc, 'epoch': epoch}
+        if not os.path.isdir('checkpoint'): os.mkdir('checkpoint')
+        torch.save(state, f'./checkpoint/ckpt_{netname}_best.pth')
+        best_acc = acc
+
+    duration = cu.gethour() - start_time
+    return acc, avg_loss, duration
+
+
+heure_debut_globale = datetime.now()
+
+for epoch in range(start_epoch, n_epochs):
+    tr_loss, tr_acc, lr, tr_time = train(epoch)
+    te_acc, te_loss, te_time = test(epoch)
+    scheduler.step()
+    
+    with open(log_path, mode='a', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow([epoch+1, f"{tr_loss:.3f}", f"{te_loss:.3f}", lr, 
+                         f"{tr_acc:.2f}", f"{te_acc:.2f}", tr_time, te_time])
+
+print(f'Entraînement terminé. Temps total : {datetime.now() - heure_debut_globale}')
