@@ -3,35 +3,34 @@ import math
 from torchinfo import summary
 from models.resnet_fac import *
 from models.mobilenetv2 import *
+from models.resnet_light import *
 from cifarutils import testloader
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 #model = ResNet18().to(device)
-model = MobileNetV2().to(device)
+model = Loicnet().to(device)
 
-path = "./checkpoint/ckpt_3b_mbnetv2_pruned_final.pth"
+path = "./checkpoint/ckpt_3b_LoicNet0.7_pruned_final.pth"
 print(path)
-# Charger checkpoint
 checkpoint = torch.load(
     path,
     map_location=device,
-    weights_only=False   # supprime le warning futur
+    weights_only=False
 )
 
 
 state_dict = checkpoint["net"]
 
-# Enlever le "module." si présent
 new_state_dict = {}
 for k, v in state_dict.items():
     if k.startswith("module."):
-        k = k[7:]   # enlever "module."
+        k = k[7:]
     new_state_dict[k] = v
 
 model.load_state_dict(new_state_dict)
 
-is_halfed = True # True to quantize to FP 16 (must be false if already quantized more)
+is_halfed = True
 
 if is_halfed:
     model.half()
@@ -40,7 +39,6 @@ def evaluate_accuracy(model, dataloader):
     model.eval()
     correct = 0
     total = 0
-    # détecter dtype du modèle
     dtype = next(model.parameters()).dtype
     with torch.no_grad():
         for inputs, targets in dataloader:
@@ -68,10 +66,11 @@ stats = summary(
 )
 
 ps = 0 # default 0
-pu = 0.9 # default 0 (c'est le pruning mgl)
-qw = 16 # default 32 bits (quantization à la fin wallah)
-qa = 32 # default 32 bits
+pu = 0 # default 0 (c'est le pruning)
+qw = 8 # default 32 bits (quantization à la fin)
+qa = 8 # default 32 bits
 w = stats.total_params
+print(f"total parameters : {w}")
 
 param_div = 5.6e06
 f =  stats.total_mult_adds

@@ -22,8 +22,7 @@ from models.resnet_fac import *
 from models.resnet_light import *
 
 
-
-#Instanciation des listes de données 
+ 
 list_losses = []
 train_accuracies = []
 test_accuracies = []
@@ -35,26 +34,25 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 #Définition du modèle
 print('==> Building model..')
-net = ResNet18()
+#net = ResNet18()
 # net = DenseNet121()
 # net = PreActResNet18()
 # net = VGG('VGG16')
 # net = ResNet18Factorized()
-# net = MobileNetV2()
+net = MobileNetV2()
 net = net.to(device)
 netname = net.__class__.__name__
 net_BC = BC(net)
 
 
 #Définition des paramètres
-criterion = torch.nn.CrossEntropyLoss() #définition de la fonction de perte
-#définition de l'optimiseur (modifie les poids du réseau en fonction de la loss)
+criterion = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.SGD(net.parameters(), lr=0.05, momentum=0.9, weight_decay=5e-4)
-n_epochs = 200  #nombre d'époques
+n_epochs = 200
 
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
-start_epoch = 0 #époque de départ
-best_acc = 0 #Définition de la meilleure accuracy
+start_epoch = 0
+best_acc = 0
 
 #Fonction de resume
 resume = False      #A changer en True si on charge un modèle existant
@@ -113,7 +111,6 @@ def train(epoch, use_mixup=True, use_BC = False):
         optimizer.zero_grad()
         
         if use_mixup:
-            #On appelle la fonction Mixup
             inputs, targets_a, targets_b, lam = cu.mixup_data(inputs, targets, alpha=1.0, device=device)
             outputs = net(inputs)
             loss = cu.mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
@@ -124,6 +121,7 @@ def train(epoch, use_mixup=True, use_BC = False):
         else:
             outputs = net(inputs)
             loss = criterion(outputs, targets)
+
             _, predicted = outputs.max(1)
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
@@ -181,7 +179,7 @@ def test(epoch, use_mixup=True, use_BC = False):
 
             msg = f'Loss: {test_loss/(batch_idx+1):.3f} | Acc: {test_acc:.2f}%'
             progress_bar(batch_idx, total_batches, msg)
-        # Save checkpoint.
+        #checkpoint
         if test_acc > best_acc:
             if use_BC : net_BC.restore()
             print(f'Saving best model - Accuracy : {test_acc:.2f} %')
@@ -202,7 +200,6 @@ def test(epoch, use_mixup=True, use_BC = False):
         duration = cu.gethour() - start_time 
         return test_acc, avg_loss, duration
 
-#Boucle principale
 for epoch in range(start_epoch, n_epochs):
     tr_loss, tr_acc, lr_rate, hrtrainepoch, mixup_used, bc_used= train(epoch)
     te_acc, te_loss, hrtestepoch = test(epoch)

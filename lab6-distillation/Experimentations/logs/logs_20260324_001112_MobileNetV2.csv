@@ -1,0 +1,1 @@
+epoch,train_loss,test_loss,learning_rate,train_acc,test_acc,training_time,testing_time,mixup_used,binary_connect_used

@@ -2,12 +2,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.utils.prune as prune
-import cifarutils as cu
 
-from models.resnet import *
 from models.mobilenetv2 import *
-from models.resnet_light import *
-from cifarutils import *
+from cifarutils import trainloader, testloader
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -16,7 +13,7 @@ def test_accuracy(net):
     correct = 0
     total = 0
     with torch.no_grad():
-        for inputs, targets in cu.testloader:
+        for inputs, targets in testloader:
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = net(inputs)
             _, predicted = outputs.max(1)
@@ -25,19 +22,25 @@ def test_accuracy(net):
 
     return 100 * correct / total
 
-net = ResNet18_Super_Light_DW_Quantizable().to(device)
+
+###################################
+# 1. Charger modèle
+###################################
+
+net = MobileNetV2().to(device)
 
 checkpoint = torch.load(
-    "./checkpoint/ckpt_Distill_Student_ResNet_Superlight_best.pth",
+    "./checkpoint/ckpt_Distill_Student_MobileNetV2_best.pth",
     map_location=device
 )
 
 state_dict = checkpoint["net"]
 
+# Enlever le "module." si présent
 new_state_dict = {}
 for k, v in state_dict.items():
     if k.startswith("module."):
-        k = k[7:] 
+        k = k[7:]   # enlever "module."
     new_state_dict[k] = v
 
 net.load_state_dict(new_state_dict)
@@ -45,7 +48,13 @@ net.load_state_dict(new_state_dict)
 print("Checkpoint chargé")
 print("Acc :", checkpoint["acc"])
 
-prune_amount = 0.5
+
+
+###################################
+# 2. Appliquer L1 pruning
+###################################
+
+prune_amount = 0.80
 modules_to_prune = []
 
 for module in net.modules():
@@ -62,6 +71,11 @@ print("Pruning appliqué (masque actif)")
 acc_masked = test_accuracy(net)
 
 print("Accuracy masked :", acc_masked)
+
+
+###################################
+# 4. Fine tuning AVEC masque
+###################################
 
 criterion = nn.CrossEntropyLoss()
 
@@ -80,7 +94,7 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
 
 def train_epoch():
     net.train()
-    for inputs, targets in cu.trainloader:
+    for inputs, targets in trainloader:
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
         outputs = net(inputs)
@@ -90,8 +104,8 @@ def train_epoch():
 
 
 best_acc = 0
-n_epochs = 5
-for epoch in range(1, n_epochs):
+n_epochs = 10
+for epoch in range(0, n_epochs):
     train_epoch()
     acc = test_accuracy(net)
     scheduler.step()
@@ -102,20 +116,29 @@ for epoch in range(1, n_epochs):
             'net': net.state_dict(),
             'acc': acc,
             'epoch': epoch
-        }, "./checkpoint/ckpt_3b_pruned_masked_finetuned.pth")
+        }, "./checkpoint/ckpt_mobile_pruned_masked_finetuned.pth")
 
         print("Checkpoint masked finetuned sauvegardé")
 
+
+###################################
+# 5. Remove pruning (final)
+###################################
 
 for module in modules_to_prune:
     prune.remove(module, 'weight')
 
 print("Pruning rendu permanent")
 
+
+###################################
+# 6. Sauvegarde finale propre
+###################################
+
 torch.save({
     'net': net.state_dict(),
     'acc': best_acc,
     'epoch': n_epochs
-}, "./checkpoint/ckpt_3b_pruned_final.pth")
+}, "./checkpoint/ckpt_mobile_pruned_final.pth")
 
 print("Modèle final sauvegardé")

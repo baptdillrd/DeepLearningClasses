@@ -17,12 +17,12 @@ print('==> Preparing models..')
 
 teachernet = ResNet18()
 teacher = teachernet.to(device)
-teacher_path = './checkpoint/ckpt_ResNet-Best-Mixup-FP32.pth'
+teacher_path = './checkpoint/ckpt_ResNet-2026-03-22-Mixup-FP32.pth'
 checkpoint_teacher = torch.load(teacher_path, map_location=device)
 teacher.load_state_dict(checkpoint_teacher['net'])
 teacher.eval()
 
-net = Loicnet()
+net = ResNet18_Super_Light_DW_Quantizable()
 student = net.to(device)
 netname = f"Distill_Student_{net.__class__.__name__}"
 
@@ -38,16 +38,12 @@ n_epochs = 200
 best_acc = 0
 start_epoch = 0
 
-# --- FONCTION DE PERTE ADAPTÉE AU MIXUP ---
 def distillation_loss(student_outputs, teacher_outputs, labels, T, alpha, labels_b=None, lam=None):
-    # Partie Distillation (Soft labels) - Toujours la même sur l'image (mixée ou non)
     p_s = F.log_softmax(student_outputs / T, dim=1)
     p_t = F.softmax(teacher_outputs / T, dim=1)
     distill_loss = criterion_kd(p_s, p_t) * (T**2)
     
-    # Partie Classification (Hard labels)
     if lam is not None and labels_b is not None:
-        # Si Mixup : perte pondérée entre target A et target B
         hard_loss = lam * criterion_cls(student_outputs, labels) + (1 - lam) * criterion_cls(student_outputs, labels_b)
     else:
         hard_loss = criterion_cls(student_outputs, labels)
@@ -84,14 +80,11 @@ def train(epoch, use_mixup=True):
             targets_a, targets_b, lam = targets, None, None
             mixup_used = "no"
 
-        # Forward étudiant
         outputs = net(inputs)
         
-        # Forward Maître (sans gradients)
         with torch.no_grad():
             teacher_outputs = teacher(inputs)
         
-        # Calcul de la perte de distillation (avec ou sans paramètres mixup)
         loss = distillation_loss(outputs, teacher_outputs, targets_a, temperature, alpha, targets_b, lam)
         
         loss.backward()
@@ -99,7 +92,6 @@ def train(epoch, use_mixup=True):
 
         train_loss += loss.item()
         
-        # Calcul de l'accuracy pour le monitoring
         _, predicted = outputs.max(1)
         total += targets.size(0)
         if use_mixup:
@@ -112,7 +104,6 @@ def train(epoch, use_mixup=True):
         progress_bar(batch_idx, len(trainloader), f'Loss: {avg_loss:.3f} | Acc: {train_acc:.2f}%')
         
     duration = cu.gethour() - start_time
-    # On retourne aussi mixup_used pour les logs
     return avg_loss, train_acc, optimizer.param_groups[0]['lr'], duration, mixup_used
 
 def test(epoch):
@@ -126,7 +117,9 @@ def test(epoch):
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
+            
             outputs = net(inputs)
+            
             loss = criterion_cls(outputs, targets)
 
             test_loss += loss.item()
@@ -134,13 +127,22 @@ def test(epoch):
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
 
-    acc = 100.*correct/total
-    avg_loss = test_loss / len(testloader)
-    
+            avg_loss = test_loss / (batch_idx + 1)
+            acc = 100.*correct/total
+            
+            progress_bar(batch_idx, len(testloader), f'Loss: {avg_loss:.3f} | Acc: {acc:.2f}%')
+
     if acc > best_acc:
         print(f'Saving best student.. Acc: {acc:.2f}%')
-        state = {'net': net.state_dict(), 'acc': acc, 'epoch': epoch}
-        if not os.path.isdir('checkpoint'): os.mkdir('checkpoint')
+        state = {
+            'net': net.state_dict(),
+            'acc': acc,
+            'epoch': epoch,
+            'optimizer': optimizer.state_dict(),
+            'scheduler': scheduler.state_dict(),
+        }
+        if not os.path.isdir('checkpoint'): 
+            os.mkdir('checkpoint')
         torch.save(state, f'./checkpoint/ckpt_{netname}_best.pth')
         best_acc = acc
 
@@ -151,13 +153,13 @@ def test(epoch):
 heure_debut_globale = datetime.now()
 
 for epoch in range(start_epoch, n_epochs):
-    tr_loss, tr_acc, lr, tr_time = train(epoch)
+    tr_loss, tr_acc, lr, tr_time, m_used = train(epoch)
     te_acc, te_loss, te_time = test(epoch)
     scheduler.step()
     
     with open(log_path, mode='a', newline='') as f:
         writer = csv.writer(f)
         writer.writerow([epoch+1, f"{tr_loss:.3f}", f"{te_loss:.3f}", lr, 
-                         f"{tr_acc:.2f}", f"{te_acc:.2f}", tr_time, te_time])
+                         f"{tr_acc:.2f}", f"{te_acc:.2f}", tr_time, te_time, m_used])
 
 print(f'Entraînement terminé. Temps total : {datetime.now() - heure_debut_globale}')
